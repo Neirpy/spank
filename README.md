@@ -25,6 +25,11 @@ Or build from source:
 go install github.com/taigrr/spank@latest
 ```
 
+> **Note:** `go install` places the binary in `~/go/bin`, which `sudo` can't find by default. Copy it to a system path so `sudo spank` works:
+> ```bash
+> sudo cp ~/go/bin/spank /usr/local/bin/spank
+> ```
+
 ## Usage
 
 ```bash
