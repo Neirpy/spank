@@ -43,7 +43,12 @@ var sexyAudio embed.FS
 //go:embed audio/halo/*.mp3
 var haloAudio embed.FS
 
+//go:embed audio/donkeykong/*.mp3
+var donkeyAudio embed.FS
+
 var (
+	painMode     bool
+	donkeyMode   bool
 	sexyMode     bool
 	haloMode     bool
 	customPath   string
@@ -250,6 +255,8 @@ Use --halo to play random audio clips from Halo soundtracks on each slap.`,
 
 	cmd.Flags().BoolVarP(&sexyMode, "sexy", "s", false, "Enable sexy mode")
 	cmd.Flags().BoolVarP(&haloMode, "halo", "H", false, "Enable halo mode")
+	cmd.Flags().BoolVarP(&donkeyMode, "donkey", "d", false, "Enable donkey mode")
+	cmd.Flags().BoolVarP(&painMode, "pain", "p", false, "Enable pain mode")
 	cmd.Flags().StringVarP(&customPath, "custom", "c", "", "Path to custom MP3 audio directory")
 	cmd.Flags().BoolVar(&fastMode, "fast", false, "Enable faster detection tuning (shorter cooldown, higher sensitivity)")
 	cmd.Flags().StringSliceVar(&customFiles, "custom-files", nil, "Comma-separated list of custom MP3 files")
@@ -276,11 +283,17 @@ func run(ctx context.Context, tuning runtimeTuning) error {
 	if haloMode {
 		modeCount++
 	}
+	if donkeyMode {
+		modeCount++
+	}
+	if painMode {
+		modeCount++
+	}
 	if customPath != "" || len(customFiles) > 0 {
 		modeCount++
 	}
 	if modeCount > 1 {
-		return fmt.Errorf("--sexy, --halo, and --custom/--custom-files are mutually exclusive; pick one")
+		return fmt.Errorf("--sexy, --halo, --donkey, --pain, and --custom/--custom-files are mutually exclusive; pick one")
 	}
 
 	if tuning.minAmplitude < 0 || tuning.minAmplitude > 1 {
@@ -309,8 +322,10 @@ func run(ctx context.Context, tuning runtimeTuning) error {
 		pack = &soundPack{name: "sexy", fs: sexyAudio, dir: "audio/sexy", mode: modeEscalation}
 	case haloMode:
 		pack = &soundPack{name: "halo", fs: haloAudio, dir: "audio/halo", mode: modeRandom}
-	default:
+	case painMode:
 		pack = &soundPack{name: "pain", fs: painAudio, dir: "audio/pain", mode: modeRandom}
+	default:
+		pack = &soundPack{name: "donkey", fs: donkeyAudio, dir: "audio/donkeykong", mode: modeRandom}
 	}
 
 	// Only load files if not already set (customFiles case)
