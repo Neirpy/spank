@@ -14,7 +14,7 @@ fi
 
 echo "🍏 Création du lanceur AppleScript..."
 cat << 'EOF' > launcher.applescript
-set actionList to {"Démarrer - Donkey (Défaut)", "Démarrer - Pain", "Démarrer - Sexy", "Démarrer - Halo"}
+set actionList to {"Démarrer - Donkey (Défaut)", "Démarrer - SCo", "Démarrer - Pain", "Démarrer - Sexy", "Démarrer - Halo"}
 set chosenAction to choose from list actionList with prompt "Spank : Choisissez le mode audio" default items {"Démarrer - Donkey (Défaut)"} with title "Spank Launcher"
 
 if chosenAction is not false then
@@ -23,7 +23,9 @@ if chosenAction is not false then
 	set spankBin to POSIX path of (path to resource "spank")
 	set spankMode to "--donkey"
 	
-	if action is "Démarrer - Pain" then
+	if action is "Démarrer - SCo" then
+		set spankMode to "--SC"
+	else if action is "Démarrer - Pain" then
 		set spankMode to "--pain"
 	else if action is "Démarrer - Sexy" then
 		set spankMode to "--sexy"

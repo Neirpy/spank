@@ -46,21 +46,25 @@ var haloAudio embed.FS
 //go:embed audio/donkeykong/*.mp3
 var donkeyAudio embed.FS
 
+//go:embed audio/sciencesco/*.mp3
+var SCAudio embed.FS
+
 var (
-	painMode     bool
-	donkeyMode   bool
-	sexyMode     bool
-	haloMode     bool
-	customPath   string
-	customFiles  []string
-	fastMode     bool
-	minAmplitude float64
-	cooldownMs   int
-	stdioMode      bool
-	volumeScaling  bool
-	paused         bool
-	pausedMu       sync.RWMutex
-	speedRatio     float64
+	painMode      bool
+	donkeyMode    bool
+	sexyMode      bool
+	haloMode      bool
+	SCMode        bool
+	customPath    string
+	customFiles   []string
+	fastMode      bool
+	minAmplitude  float64
+	cooldownMs    int
+	stdioMode     bool
+	volumeScaling bool
+	paused        bool
+	pausedMu      sync.RWMutex
+	speedRatio    float64
 )
 
 // sensorReady is closed once shared memory is created and the sensor
@@ -218,7 +222,7 @@ func (st *slapTracker) getFile(score float64) string {
 	// At sustained max slap rate, score reaches ssMax which maps
 	// to the final file.
 	maxIdx := len(st.pack.files) - 1
-	idx := min(int(float64(len(st.pack.files)) * (1.0 - math.Exp(-(score-1)/st.scale))), maxIdx)
+	idx := min(int(float64(len(st.pack.files))*(1.0-math.Exp(-(score-1)/st.scale))), maxIdx)
 	return st.pack.files[idx]
 }
 
@@ -257,6 +261,7 @@ Use --halo to play random audio clips from Halo soundtracks on each slap.`,
 	cmd.Flags().BoolVarP(&haloMode, "halo", "H", false, "Enable halo mode")
 	cmd.Flags().BoolVarP(&donkeyMode, "donkey", "d", false, "Enable donkey mode")
 	cmd.Flags().BoolVarP(&painMode, "pain", "p", false, "Enable pain mode")
+	cmd.Flags().BoolVarP(&SCMode, "SC", "C", false, "Enable SCo mode")
 	cmd.Flags().StringVarP(&customPath, "custom", "c", "", "Path to custom MP3 audio directory")
 	cmd.Flags().BoolVar(&fastMode, "fast", false, "Enable faster detection tuning (shorter cooldown, higher sensitivity)")
 	cmd.Flags().StringSliceVar(&customFiles, "custom-files", nil, "Comma-separated list of custom MP3 files")
@@ -289,11 +294,16 @@ func run(ctx context.Context, tuning runtimeTuning) error {
 	if painMode {
 		modeCount++
 	}
+
+	if SCMode {
+		modeCount++
+	}
+
 	if customPath != "" || len(customFiles) > 0 {
 		modeCount++
 	}
 	if modeCount > 1 {
-		return fmt.Errorf("--sexy, --halo, --donkey, --pain, and --custom/--custom-files are mutually exclusive; pick one")
+		return fmt.Errorf("--sexy, --halo, --donkey, --pain, --SC, and --custom/--custom-files are mutually exclusive; pick one")
 	}
 
 	if tuning.minAmplitude < 0 || tuning.minAmplitude > 1 {
@@ -324,6 +334,8 @@ func run(ctx context.Context, tuning runtimeTuning) error {
 		pack = &soundPack{name: "halo", fs: haloAudio, dir: "audio/halo", mode: modeRandom}
 	case painMode:
 		pack = &soundPack{name: "pain", fs: painAudio, dir: "audio/pain", mode: modeRandom}
+	case SCMode:
+		pack = &soundPack{name: "SC", fs: SCAudio, dir: "audio/sciencesco", mode: modeRandom}
 	default:
 		pack = &soundPack{name: "donkey", fs: donkeyAudio, dir: "audio/donkeykong", mode: modeRandom}
 	}
@@ -481,10 +493,10 @@ var speakerMu sync.Mutex
 // (base 2): -3.0 is ~1/8 volume, 0.0 is full volume.
 func amplitudeToVolume(amplitude float64) float64 {
 	const (
-		minAmp   = 0.05  // softest detectable
-		maxAmp   = 0.80  // treat anything above this as max
-		minVol   = -3.0  // quietest playback (1/8 volume with base 2)
-		maxVol   = 0.0   // full volume
+		minAmp = 0.05 // softest detectable
+		maxAmp = 0.80 // treat anything above this as max
+		minVol = -3.0 // quietest playback (1/8 volume with base 2)
+		maxVol = 0.0  // full volume
 	)
 
 	// Clamp
