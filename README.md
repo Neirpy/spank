@@ -33,10 +33,36 @@ go install github.com/taigrr/spank@latest
 ```
 
 > **Note:** `go install` places the binary in `$GOBIN` (if set) or `$(go env GOPATH)/bin` (which defaults to `~/go/bin`). Copy it to a system path so `sudo spank` works. For example, with the default Go settings:
->
 > ```bash
 > sudo cp "$(go env GOPATH)/bin/spank" /usr/local/bin/spank
 > ```
+
+## Packaging (macOS App & DMG)
+
+If you wish to distribute Spank as a beautiful MacOS application (`.app`) inside a clean `.dmg` installer, follow these steps:
+
+1. Install [`create-dmg`](https://github.com/create-dmg/create-dmg) via Homebrew:
+```bash
+brew install create-dmg
+```
+
+2. Run the provided build script to generate the `Spank.app` bundle:
+```bash
+./build_mac_app.sh
+```
+
+3. Package the app into a final user-friendly `Spank.dmg`:
+```bash
+rm -f Spank.dmg && create-dmg \
+  --volname "Spank App Installer" \
+  --window-pos 200 120 \
+  --window-size 600 400 \
+  --icon-size 100 \
+  --icon "Spank.app" 150 150 \
+  --app-drop-link 450 150 \
+  "Spank.dmg" \
+  "Spank.app"
+```
 
 ## Usage
 

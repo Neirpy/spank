@@ -16,6 +16,9 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"path/filepath"
+	"net/http"
+	"os/exec"
 	"strings"
 	"sync"
 	"syscall"
@@ -65,7 +68,350 @@ var (
 	paused        bool
 	pausedMu      sync.RWMutex
 	speedRatio    float64
+	uiMode        bool
+	activeCmd     *exec.Cmd
+	activeCmdMu   sync.Mutex
+	activePackId  string
 )
+
+const uiHTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spank Control Center</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #f8fafc;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --success: #10b981;
+            --danger: #ef4444;
+            --card-bg: rgba(30, 41, 59, 0.7);
+        }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: radial-gradient(circle at 50% -20%, #1e293b, #0f172a);
+            color: var(--text-color);
+            min-height: 100vh;
+            margin: 0;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3rem;
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            border-radius: 16px;
+            border: 1px solid var(--glass-border);
+        }
+        h1 {
+            margin: 0;
+            font-size: 2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 9999px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn:hover { background: var(--accent-hover); transform: translateY(-2px); }
+        .btn-danger { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid var(--danger); }
+        .btn-danger:hover { background: var(--danger); color: white; }
+        .btn-stop { background: var(--danger); color: white; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .card:hover { transform: translateY(-5px); border-color: var(--accent); }
+        .card h3 { margin-top: 0; font-size: 1.25rem; font-weight: 600; }
+        .card-actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+        .card-actions button { flex: 1; }
+        .playing-indicator {
+            color: var(--success);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .playing-indicator::before {
+            content: '';
+            display: block;
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .upload-zone {
+            border: 2px dashed #475569;
+            border-radius: 16px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 3rem;
+            background: rgba(15, 23, 42, 0.4);
+        }
+        .upload-zone.dragover { border-color: var(--accent); background: rgba(59, 130, 246, 0.1); }
+        #pack-name {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            width: 100%;
+            max-width: 300px;
+            font-size: 1rem;
+        }
+        .status { margin-top: 1rem; padding: 1rem; border-radius: 8px; display: none; }
+        .success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+        .error { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+        .global-stop-btn {
+            background: var(--danger);
+            color: white;
+            font-size: 1.25rem;
+            padding: 1rem 2rem;
+            margin-bottom: 2rem;
+            width: 100%;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🍑 Spank Control Center</h1>
+    </div>
+
+    <button id="globalStopBtn" class="btn global-stop-btn" style="display: none;" onclick="stopPack()">🛑 STOP ACTIVE SLAP LISTENER</button>
+
+    <h2>Available Packs</h2>
+    <div class="grid" id="packs-grid">
+        <!-- populated by JS -->
+    </div>
+
+    <div class="upload-zone" id="drop-zone">
+        <h3>🎨 Create New Custom Pack</h3>
+        <input type="text" id="pack-name" placeholder="Name your pack (e.g., My Sounds)" onclick="event.stopPropagation()">
+        <p>Type a name above, then Drag & Drop your audio files here.</p>
+        <input type="file" id="file-input" multiple accept=".mp3" style="display: none;">
+        <div id="upload-status" class="status"></div>
+    </div>
+
+<script>
+    let activePack = null;
+
+    async function loadPacks() {
+        try {
+            const res = await fetch('/api/packs');
+            const data = await res.json();
+            activePack = data.active;
+            const grid = document.getElementById('packs-grid');
+            grid.innerHTML = '';
+
+            if (activePack) {
+                document.getElementById('globalStopBtn').style.display = 'block';
+            } else {
+                document.getElementById('globalStopBtn').style.display = 'none';
+            }
+
+            data.packs.forEach(pack => {
+                const isPlaying = activePack && activePack.id === pack.id;
+                const card = document.createElement('div');
+                card.className = 'card';
+                
+                let deleteBtn = '';
+                if (pack.type === 'custom') {
+                    deleteBtn = '<button class="btn btn-danger" onclick="deletePack(\'' + pack.id + '\')">🗑️ Delete</button>';
+                }
+
+                let playBtn = isPlaying 
+                    ? '<button class="btn btn-stop" onclick="stopPack()">🛑 Stop</button>'
+                    : '<button class="btn" onclick="playPack(\''+pack.type+'\', \''+pack.id+'\')">▶️ Play</button>';
+
+                let countText = pack.type === 'custom' ? ('(' + pack.count + ' sounds)') : 'Built-in pack';
+
+                card.innerHTML = 
+                    '<div>' +
+                        '<h3>' + pack.name + '</h3>' +
+                        '<p style="color: #94a3b8; font-size: 0.9rem;">' + countText + '</p>' +
+                        (isPlaying ? '<div class="playing-indicator">LISTENING FOR SLAPS...</div>' : '') +
+                    '</div>' +
+                    '<div class="card-actions">' +
+                        playBtn +
+                        deleteBtn +
+                    '</div>';
+                grid.appendChild(card);
+            });
+        } catch(e) { }
+    }
+
+    async function playPack(type, id) {
+        await fetch('/api/play', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type, id})
+        });
+        loadPacks();
+    }
+
+    async function stopPack() {
+        await fetch('/api/stop', { method: 'POST' });
+        loadPacks();
+    }
+
+    async function deletePack(id) {
+        if(!confirm('Are you sure you want to delete this custom pack?')) return;
+        await fetch('/api/packs?id=' + encodeURIComponent(id), { method: 'DELETE' });
+        loadPacks();
+    }
+
+
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const statusEl = document.getElementById('upload-status');
+    const packNameInput = document.getElementById('pack-name');
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => {
+        dropZone.addEventListener(e, preventDefaults, false);
+        document.body.addEventListener(e, preventDefaults, false);
+    });
+
+    function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+
+    ['dragenter', 'dragover'].forEach(e => dropZone.addEventListener(e, () => dropZone.classList.add('dragover'), false));
+    ['dragleave', 'drop'].forEach(e => dropZone.addEventListener(e, () => dropZone.classList.remove('dragover'), false));
+
+    dropZone.addEventListener('drop', handleDrop, false);
+    dropZone.addEventListener('click', () => { fileInput.click(); });
+    fileInput.addEventListener('change', function() { handleFiles(Array.from(this.files)); });
+
+    async function handleDrop(e) {
+        let files = [];
+        if (e.dataTransfer.items) {
+            const items = Array.from(e.dataTransfer.items).map(item => item.webkitGetAsEntry());
+            files = await getFilesFromEntries(items);
+        } else {
+            files = Array.from(e.dataTransfer.files);
+        }
+        handleFiles(files);
+    }
+    
+    async function getFilesFromEntries(entries) {
+        let files = [];
+        for (let entry of entries) {
+            if (entry) {
+                if (entry.isFile) {
+                    try {
+                        const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+                        files.push(file);
+                    } catch (err) { }
+                } else if (entry.isDirectory) {
+                    const dirReader = entry.createReader();
+                    const entriesInDir = await new Promise((resolve, reject) => {
+                        let ents = [];
+                        function read() {
+                            dirReader.readEntries(res => {
+                                if(!res.length) resolve(ents);
+                                else { ents = ents.concat(Array.from(res)); read(); }
+                            });
+                        }
+                        read();
+                    });
+                    const subFiles = await getFilesFromEntries(entriesInDir);
+                    files = files.concat(subFiles);
+                }
+            }
+        }
+        return files;
+    }
+
+    function handleFiles(files) {
+        let name = packNameInput.value.trim();
+        if (!name) {
+            showStatus('Please enter a pack name before dropping files!', 'error');
+            return;
+        }
+        // Only accept alphanumeric and basic characters securely.
+        if (!/^[a-zA-Z0-9 _-]+$/.test(name)) {
+            showStatus('Invalid pack name (use letters, numbers, spaces, -, _)', 'error');
+            return;
+        }
+
+        let mp3s = files.filter(f => f.name.toLowerCase().endsWith('.mp3'));
+        if (mp3s.length === 0) {
+            showStatus('No MP3 files found!', 'error');
+            return;
+        }
+        mp3s.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'}));
+        
+        showStatus('Uploading ' + mp3s.length + ' files...', 'success');
+        const formData = new FormData();
+        formData.append('packName', name);
+        mp3s.forEach(f => formData.append('files', f));
+
+        fetch('/api/upload', { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showStatus('✅ Pack created successfully!', 'success');
+                packNameInput.value = '';
+                loadPacks();
+            } else showStatus(data.error, 'error');
+        }).catch(err => showStatus('Error: '+err, 'error'));
+    }
+
+    function showStatus(msg, type) {
+        statusEl.style.display = 'block';
+        statusEl.className = 'status ' + type;
+        statusEl.innerHTML = msg;
+        setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
+    }
+
+    setInterval(loadPacks, 2000);
+    loadPacks();
+</script>
+</body>
+</html>
+`
 
 // sensorReady is closed once shared memory is created and the sensor
 // worker is about to enter the CFRunLoop.
@@ -257,6 +603,7 @@ Use --halo to play random audio clips from Halo soundtracks on each slap.`,
 		SilenceUsage: true,
 	}
 
+	cmd.Flags().BoolVarP(&uiMode, "ui", "u", false, "Start the Web UI to create a custom spank pack")
 	cmd.Flags().BoolVarP(&sexyMode, "sexy", "s", false, "Enable sexy mode")
 	cmd.Flags().BoolVarP(&haloMode, "halo", "H", false, "Enable halo mode")
 	cmd.Flags().BoolVarP(&donkeyMode, "donkey", "d", false, "Enable donkey mode")
@@ -277,6 +624,10 @@ Use --halo to play random audio clips from Halo soundtracks on each slap.`,
 }
 
 func run(ctx context.Context, tuning runtimeTuning) error {
+	if uiMode {
+		return runUI()
+	}
+
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("spank requires root privileges for accelerometer access, run with: sudo spank")
 	}
@@ -657,4 +1008,245 @@ func processCommands(r io.Reader, w io.Writer) {
 			}
 		}
 	}
+}
+
+func runUI() error {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(uiHTML))
+	})
+
+	http.HandleFunc("/api/packs", handlePacks)
+	http.HandleFunc("/api/upload", handleUpload)
+	http.HandleFunc("/api/play", handlePlay)
+	http.HandleFunc("/api/stop", handleStop)
+	http.HandleFunc("/api/quit", handleQuit)
+
+	port := 8080
+	url := fmt.Sprintf("http://localhost:%d", port)
+	fmt.Printf("spank: starting Web UI at %s\n", url)
+
+	return http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+}
+
+func getPacks() []map[string]interface{} {
+	packs := []map[string]interface{}{
+		{"id": "donkey", "name": "Donkey (Default)", "type": "default"},
+		{"id": "sexy", "name": "Sexy (Escalation)", "type": "default"},
+		{"id": "halo", "name": "Halo", "type": "default"},
+		{"id": "pain", "name": "Pain", "type": "default"},
+		{"id": "SC", "name": "SCo", "type": "default"},
+	}
+
+	customDir := "/Users/Shared/SpankPacks"
+	entries, err := os.ReadDir(customDir)
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				// Count mp3s
+				count := 0
+				mp3s, _ := os.ReadDir(filepath.Join(customDir, e.Name()))
+				for _, f := range mp3s {
+					if strings.HasSuffix(strings.ToLower(f.Name()), ".mp3") {
+						count++
+					}
+				}
+				packs = append(packs, map[string]interface{}{
+					"id":    e.Name(),
+					"name":  e.Name(),
+					"type":  "custom",
+					"count": count,
+				})
+			}
+		}
+	}
+	return packs
+}
+
+func handlePacks(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "DELETE" {
+		id := r.URL.Query().Get("id")
+		if id != "" && !strings.Contains(id, "..") && !strings.Contains(id, "/") {
+			os.RemoveAll(filepath.Join("/Users/Shared/SpankPacks", id))
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	activeCmdMu.Lock()
+	var act map[string]string
+	// Only consider it active if the process is actually running
+	if activeCmd != nil && activeCmd.Process != nil && activePackId != "" {
+		act = map[string]string{"id": activePackId}
+	}
+	activeCmdMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"packs":  getPacks(),
+		"active": act,
+	})
+}
+
+func handlePlay(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Type string `json:"type"`
+		Id   string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body")
+		return
+	}
+
+	activeCmdMu.Lock()
+	defer activeCmdMu.Unlock()
+
+	if activeCmd != nil && activeCmd.Process != nil {
+		activeCmd.Process.Kill()
+		activeCmd.Wait()
+		activeCmd = nil
+		activePackId = ""
+	}
+
+	args := []string{}
+	// Important: We must not run uiMode recursively!
+	if req.Type == "custom" {
+		if strings.Contains(req.Id, "..") || strings.Contains(req.Id, "/") {
+			jsonError(w, "Invalid pack id")
+			return
+		}
+		args = append(args, "--custom", filepath.Join("/Users/Shared/SpankPacks", req.Id))
+	} else {
+		args = append(args, "--"+req.Id)
+	}
+
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	
+	if err := cmd.Start(); err != nil {
+		jsonError(w, "Failed to start tracking")
+		return
+	}
+	
+	// Helper goroutine to clear activeCmd state when it stops inherently
+	go func(c *exec.Cmd, packId string) {
+		c.Wait()
+		activeCmdMu.Lock()
+		// Only clear if another process didn't take over
+		if activeCmd == c {
+			activeCmd = nil
+			activePackId = ""
+		}
+		activeCmdMu.Unlock()
+	}(cmd, req.Id)
+
+	activeCmd = cmd
+	activePackId = req.Id
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+}
+
+func handleStop(w http.ResponseWriter, r *http.Request) {
+	activeCmdMu.Lock()
+	defer activeCmdMu.Unlock()
+
+	if activeCmd != nil && activeCmd.Process != nil {
+		activeCmd.Process.Kill()
+		activeCmd.Wait()
+		activeCmd = nil
+		activePackId = ""
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func handleQuit(w http.ResponseWriter, r *http.Request) {
+	go func() {
+		activeCmdMu.Lock()
+		if activeCmd != nil && activeCmd.Process != nil {
+			activeCmd.Process.Kill()
+		}
+		activeCmdMu.Unlock()
+		time.Sleep(200 * time.Millisecond)
+		os.Exit(0)
+	}()
+	w.WriteHeader(http.StatusOK)
+}
+
+func handleUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	err := r.ParseMultipartForm(100 << 20)
+	if err != nil {
+		jsonError(w, "File size too large or invalid request")
+		return
+	}
+
+	packName := r.FormValue("packName")
+	if packName == "" || strings.Contains(packName, "/") || strings.Contains(packName, "\\") || strings.Contains(packName, "..") {
+		jsonError(w, "Invalid or missing packName")
+		return
+	}
+
+	files := r.MultipartForm.File["files"]
+	if len(files) == 0 {
+		jsonError(w, "No files provided")
+		return
+	}
+
+	outDir := filepath.Join("/Users/Shared/SpankPacks", packName)
+	if err := os.MkdirAll(outDir, 0777); err != nil {
+		jsonError(w, fmt.Sprintf("Could not create directory: %v", err))
+		return
+	}
+
+	for i, fileHeader := range files {
+		file, err := fileHeader.Open()
+		if err != nil {
+			jsonError(w, fmt.Sprintf("Error opening file %s", fileHeader.Filename))
+			return
+		}
+
+		outFileName := fmt.Sprintf("%02d.mp3", i)
+		outFilePath := filepath.Join(outDir, outFileName)
+		
+		outFile, err := os.Create(outFilePath)
+		if err != nil {
+			file.Close()
+			jsonError(w, fmt.Sprintf("Error creating %s", outFileName))
+			return
+		}
+
+		_, err = io.Copy(outFile, file)
+		outFile.Close()
+		file.Close()
+
+		if err != nil {
+			jsonError(w, fmt.Sprintf("Error writing %s", outFileName))
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"path":    outDir,
+	})
+}
+
+func jsonError(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": false,
+		"error":   msg,
+	})
 }
