@@ -27,11 +27,15 @@ The installation **exclusively** targets **Apple Silicon** chips (M1 and higher 
 2. Double-click on `Spank.dmg` and simply drag **Spank.app** into your *Applications* folder.
 3. Open Spank (macOS will ask for your administrator password, this is mandatory to grant the right to read physical sensors from the accelerometer!).
 
-## 🛠️ For Developers (Packaging the App)
+## 🛠️ For Developers (Modify & Package the App)
 
 The architecture is entirely contained within the `build_mac_app.sh` file. If you modify the code (HTML of the control center, Go server logic, or the WKWebView Swift wrapper), you must re-compile the system application.
 
-**Prerequisites:** Golang installation and the `create-dmg` package via Homebrew (`brew install create-dmg`).
+**📋 Build Prerequisites:**
+- **MacOS Apple Silicon** (M1/M2/M3).
+- **Golang** installed on your system.
+- Apple's **Xcode Command Line Tools** (installed by default on many Macs, providing systems utilities like `swiftc` or `sips` for icons).
+- The **create-dmg** package via Homebrew (`brew install create-dmg`).
 
 ```bash
 # 1. Compiles the Go binary, macOS icons, the native Swift WKWebView wrapper, and generates "Spank.app"
