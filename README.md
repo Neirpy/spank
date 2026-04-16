@@ -1,58 +1,43 @@
 <p align="center">
-  <img src="doc/logo.png" alt="spank logo" width="200">
+  <img src="icon.png" alt="spank logo" width="200">
 </p>
 
-# spank
+# Spank Control Center
 
-**English** | [简体中文][readme-zh-link]
+[English](README-en.md) | **[Français](README.md)**
 
-Slap your MacBook, it yells back.
+Une application macOS complètement native et ultra-fluide qui détecte les claques (slaps) données à votre MacBook et y répond par des effets sonores ! 
 
-> "this is the most amazing thing i've ever seen" — [@kenwheeler](https://x.com/kenwheeler)
+Spank Control Center embarque une interface visuelle dédiée (Webview Native Apple) vous permettant de gérer vos propres banques de sons ou d'utiliser les nombreux packs intégrés.
 
-> "I just ran sexy mode with my wife sitting next to me...We died laughing" — [@duncanthedev](https://x.com/duncanthedev)
+> **Note :** Ce projet repensé avec une interface graphique complète et packagé en application macOS de bureau est basé sur un fork du projet CLI original (`taigrr/spank`).
 
-> "peak engineering" — [@tylertaewook](https://x.com/tylertaewook)
+## 🌟 Fonctionnalités uniques
 
-Uses the Apple Silicon accelerometer (Bosch BMI286 IMU via IOKit HID) to detect physical hits on your laptop and plays audio responses. Single binary, no dependencies.
+- **Application macOS Autonome :** Fini les lignes de commande complexes. Lancez **`Spank.app`** et gérez tout depuis l'interface visuelle. La fenêtre se comporte comme n'importe quel logiciel Mac, avec son icône dans le dock.
+- **Créateur de Modes Personnalisés :** Glissez-déposez n'importe quels fichiers de musiques ou de sons `.mp3` dans la zone de dépôt, donnez-lui un nom, et c'est tout ! L'application renomme et sauvegarde tout intelligemment.
+- **Détection temps réel (Apple Silicon) :** Utilise l'accéléromètre natif des puces M1, M2, M3 etc. pour mesurer précisément quand l'ordinateur encaisse un choc.
+- **Contrôle en 1 clic :** Naviguez entre vos différents packs (ex: lancer le thème *Sexy* ou le thème *Donkey*), supprimez vos créations, lancez la détection ("*Play*") ou coupez la ("*Stop*") de manière totalement dynamique.
 
-## Requirements
+## 🚀 Comment l'utiliser (Installation)
 
-- macOS on Apple Silicon (M2+)
-- `sudo` (for IOKit HID accelerometer access)
-- Go 1.26+ (if building from source)
+L'installation ne cible **exclusivement** que les puces **Apple Silicon** (M1 et versions supérieures).  
 
-## Install
+1. Rendez-vous dans la racine du projet ou dans les **Releases** pour télécharger le fichier **`Spank.dmg`**.
+2. Double-cliquez sur `Spank.dmg` et glissez simplement **Spank.app** dans votre dossier *Applications*.
+3. Ouvrez Spank (macOS vous demandera votre mot de passe, c'est indispensable pour accorder le droit de lire les capteurs physiques de l'accéléromètre !).
 
-Download from the [latest release](https://github.com/taigrr/spank/releases/latest).
+## 🛠️ Pour les Développeurs (Packager l'App)
 
-Or build from source:
+L'architecture est entièrement contenue dans le fichier `build_mac_app.sh`. Si vous modifiez le code (HTML du control center, logique du serveur Go, ou le wrapper Swift WKWebView), vous devez re-compiler l'application système.
+
+**Prérequis :** installation de Golang et du packet `create-dmg` via Homebrew (`brew install create-dmg`).
 
 ```bash
-go install github.com/taigrr/spank@latest
-```
-
-> **Note:** `go install` places the binary in `$GOBIN` (if set) or `$(go env GOPATH)/bin` (which defaults to `~/go/bin`). Copy it to a system path so `sudo spank` works. For example, with the default Go settings:
-> ```bash
-> sudo cp "$(go env GOPATH)/bin/spank" /usr/local/bin/spank
-> ```
-
-## Packaging (macOS App & DMG)
-
-If you wish to distribute Spank as a beautiful MacOS application (`.app`) inside a clean `.dmg` installer, follow these steps:
-
-1. Install [`create-dmg`](https://github.com/create-dmg/create-dmg) via Homebrew:
-```bash
-brew install create-dmg
-```
-
-2. Run the provided build script to generate the `Spank.app` bundle:
-```bash
+# 1. Compile le binaire Go, les icones macOS, le wrapper natif Swift WKWebView, et génère "Spank.app"
 ./build_mac_app.sh
-```
 
-3. Package the app into a final user-friendly `Spank.dmg`:
-```bash
+# 2. Package l'application fraîchement compilée dans un DMG super-visuel pour la distribution :
 rm -f Spank.dmg && create-dmg \
   --volname "Spank App Installer" \
   --window-pos 200 120 \
@@ -64,200 +49,10 @@ rm -f Spank.dmg && create-dmg \
   "Spank.app"
 ```
 
-## Usage
+## 🤔 Comment ça marche en coulisses ?
 
-```bash
-# Normal mode — says "ow!" when slapped
-sudo spank
+- **Interface Mac Native :** `Spank.app` n'est pas un site Safari classique. Le build script va compiler via `swiftc` une capsule Cocoa Native de macOS qui propulse une vue WKWebView en plein code.
+- **La boucle Serveur Go :** Derrière cette magnifique interface se cache l'âme du projet : un binaire Go en administrateur doté de multi-threading (Goroutines). C'est lui qui lit toutes les commandes API silencieusement et donne vie au son !
 
-# Sexy mode — escalating responses based on slap frequency
-sudo spank --sexy
-
-# Halo mode — plays Halo death sounds when slapped
-sudo spank --halo
-
-# Fast mode — faster polling and shorter cooldown
-sudo spank --fast
-sudo spank --sexy --fast
-
-# Custom mode — plays your own MP3 files from a directory
-sudo spank --custom /path/to/mp3s
-
-# Adjust sensitivity with amplitude threshold (lower = more sensitive)
-sudo spank --min-amplitude 0.1   # more sensitive
-sudo spank --min-amplitude 0.25  # less sensitive
-sudo spank --sexy --min-amplitude 0.2
-
-# Set cooldown period in millisecond (default: 750)
-sudo spank --cooldown 600
-
-# Set playback speed multiplier (default: 1.0)
-sudo spank --speed 0.7   # slower and deeper
-sudo spank --speed 1.5   # faster
-sudo spank --sexy --speed 0.6
-```
-
-### Modes
-
-**Pain mode** (default): Randomly plays from 10 pain/protest audio clips when a slap is detected.
-
-**Sexy mode** (`--sexy`): Tracks slaps within a rolling 5-minute window. The more you slap, the more intense the audio response. 60 levels of escalation.
-
-**Halo mode** (`--halo`): Randomly plays from death sound effects from the Halo video game series when a slap is detected.
-
-**Custom mode** (`--custom`): Randomly plays MP3 files from a custom directory you specify.
-
-### Detection tuning
-
-Use `--fast` for a more responsive profile with faster polling (4ms vs 10ms), shorter cooldown (350ms vs 750ms), higher sensitivity (0.18 vs 0.05 threshold), and larger sample batch (320 vs 200).
-
-You can still override individual values with `--min-amplitude` and `--cooldown` when needed.
-
-### Sensitivity
-
-Control detection sensitivity with `--min-amplitude` (default: `0.05`):
-
-- Lower values (e.g., 0.05-0.10): Very sensitive, detects light taps
-- Medium values (e.g., 0.15-0.30): Balanced sensitivity
-- Higher values (e.g., 0.30-0.50): Only strong impacts trigger sounds
-
-The value represents the minimum acceleration amplitude (in g-force) required to trigger a sound.
-
-## Running as a Service
-
-To have spank start automatically at boot, create a launchd plist. Pick your mode:
-
-<details>
-<summary>Pain mode (default)</summary>
-
-```bash
-sudo tee /Library/LaunchDaemons/com.taigrr.spank.plist > /dev/null << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.taigrr.spank</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/spank</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/spank.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/spank.err</string>
-</dict>
-</plist>
-EOF
-```
-
-</details>
-
-<details>
-<summary>Sexy mode</summary>
-
-```bash
-sudo tee /Library/LaunchDaemons/com.taigrr.spank.plist > /dev/null << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.taigrr.spank</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/spank</string>
-        <string>--sexy</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/spank.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/spank.err</string>
-</dict>
-</plist>
-EOF
-```
-
-</details>
-
-<details>
-<summary>Halo mode</summary>
-
-```bash
-sudo tee /Library/LaunchDaemons/com.taigrr.spank.plist > /dev/null << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.taigrr.spank</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/spank</string>
-        <string>--halo</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/spank.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/spank.err</string>
-</dict>
-</plist>
-EOF
-```
-
-</details>
-
-> **Note:** Update the path to `spank` if you installed it elsewhere (e.g. `~/go/bin/spank`).
-
-Load and start the service:
-
-```bash
-sudo launchctl load /Library/LaunchDaemons/com.taigrr.spank.plist
-```
-
-Since the plist lives in `/Library/LaunchDaemons` and no `UserName` key is set, launchd runs it as root — no `sudo` needed.
-
-To stop or unload:
-
-```bash
-sudo launchctl unload /Library/LaunchDaemons/com.taigrr.spank.plist
-```
-
-## How it works
-
-1. Reads raw accelerometer data directly via IOKit HID (Apple SPU sensor)
-2. Runs vibration detection (STA/LTA, CUSUM, kurtosis, peak/MAD)
-3. When a significant impact is detected, plays an embedded MP3 response
-4. **Optional volume scaling** (`--volume-scaling`) — light taps play quietly, hard slaps play at full volume
-5. **Optional speed control** (`--speed`) — adjusts playback speed and pitch (0.5 = half speed, 2.0 = double speed)
-6. 750ms cooldown between responses to prevent rapid-fire, adjustable with `--cooldown`
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=taigrr/spank&type=date&legend=top-left)](https://www.star-history.com/#taigrr/spank&type=date&legend=top-left)
-
-## Credits
-
-Sensor reading and vibration detection ported from [olvvier/apple-silicon-accelerometer](https://github.com/olvvier/apple-silicon-accelerometer).
-
-## License
-
-MIT
-
-<!-- Links -->
-[readme-zh-link]: ./README-zh.md
+---
+*Mentions : Ce projet exploite les algorithmes de détection d'accéléromètre Apple Silicon originellement portés par [olvvier/apple-silicon-accelerometer](https://github.com/olvvier/apple-silicon-accelerometer) et est un fork UI-Native de l'utilitaire CLI [taigrr/spank](https://github.com/taigrr/spank).*
