@@ -42,15 +42,20 @@ L'architecture est entièrement contenue dans le fichier `build_mac_app.sh`. Si 
 ./build_mac_app.sh
 
 # 2. Package l'application fraîchement compilée dans un DMG super-visuel pour la distribution :
-rm -f Spank.dmg && create-dmg \
+rm -rf dmg_source Spank.dmg
+mkdir dmg_source
+mv Spank.app Install_Spank.command dmg_source/
+
+create-dmg \
   --volname "Spank App Installer" \
   --window-pos 200 120 \
   --window-size 600 400 \
   --icon-size 100 \
   --icon "Spank.app" 150 150 \
   --app-drop-link 450 150 \
+  --icon "Install_Spank.command" 300 250 \
   "Spank.dmg" \
-  "Spank.app"
+  "dmg_source/"
 ```
 
 ## 🤔 Comment ça marche en coulisses ?

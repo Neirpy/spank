@@ -13,12 +13,12 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"os"
-	"os/signal"
-	"sort"
-	"path/filepath"
 	"net/http"
+	"os"
 	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -260,7 +260,7 @@ const uiHTML = `
                 
                 let deleteBtn = '';
                 if (pack.type === 'custom') {
-                    deleteBtn = '<button class="btn btn-danger" onclick="deletePack(\'' + pack.id + '\')">🗑️ Delete</button>';
+                    deleteBtn = '<button class="btn btn-danger" onclick="deletePack(this, \'' + pack.id + '\')">🗑️ Delete</button>';
                 }
 
                 let playBtn = isPlaying 
@@ -298,8 +298,20 @@ const uiHTML = `
         loadPacks();
     }
 
-    async function deletePack(id) {
-        if(!confirm('Are you sure you want to delete this custom pack?')) return;
+    async function deletePack(btn, id) {
+        if(btn.innerText === '🗑️ Delete') {
+            btn.innerText = '⚠️ Sure?';
+            btn.style.background = 'var(--danger)';
+            btn.style.color = 'white';
+            setTimeout(() => {
+                if(btn) {
+                    btn.innerText = '🗑️ Delete';
+                    btn.style.background = '';
+                    btn.style.color = '';
+                }
+            }, 3000);
+            return;
+        }
         await fetch('/api/packs?id=' + encodeURIComponent(id), { method: 'DELETE' });
         loadPacks();
     }
@@ -1127,12 +1139,12 @@ func handlePlay(w http.ResponseWriter, r *http.Request) {
 	cmd := exec.Command(os.Args[0], args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	if err := cmd.Start(); err != nil {
 		jsonError(w, "Failed to start tracking")
 		return
 	}
-	
+
 	// Helper goroutine to clear activeCmd state when it stops inherently
 	go func(c *exec.Cmd, packId string) {
 		c.Wait()
@@ -1217,7 +1229,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 
 		outFileName := fmt.Sprintf("%02d.mp3", i)
 		outFilePath := filepath.Join(outDir, outFileName)
-		
+
 		outFile, err := os.Create(outFilePath)
 		if err != nil {
 			file.Close()

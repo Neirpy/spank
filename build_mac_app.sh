@@ -33,7 +33,7 @@ cat << 'EOF' > webview.swift
 import Cocoa
 import WebKit
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate {
     var window: NSWindow!
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
@@ -57,6 +57,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         let webView = WKWebView(frame: window.contentView!.bounds)
         webView.autoresizingMask = [.width, .height]
+        webView.uiDelegate = self
         webView.setValue(false, forKey: "drawsBackground")
         window.contentView?.addSubview(webView)
         
@@ -86,6 +87,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         group.enter()
         URLSession.shared.dataTask(with: req) { _,_,_ in group.leave() }.resume()
         _ = group.wait(timeout: .now() + 1.0)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        let response = alert.runModal()
+        completionHandler(response == .alertFirstButtonReturn)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+        completionHandler()
     }
 }
 
@@ -134,6 +152,38 @@ cat << EOF > "${APP_BUNDLE}/Contents/Info.plist"
 </plist>
 EOF
 
+echo "🔐 Signature de l'application..."
+codesign --force --deep -s - "${APP_BUNDLE}"
+
+echo "📜 Création du script d'installation de contournement..."
+cat << 'EOF' > Install_Spank.command
+#!/bin/bash
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+APP_PATH="$DIR/Spank.app"
+
+echo "=========================================="
+echo "🍑 Spank Control Center Installer"
+echo "=========================================="
+
+if [ -d "$APP_PATH" ]; then
+    echo "1. Déblocage des sécurités Apple Gatekeeper..."
+    xattr -cr "$APP_PATH" 2>/dev/null
+    
+    echo "2. Copie de l'application vers /Applications..."
+    cp -R "$APP_PATH" /Applications/
+    
+    echo "3. Lancement de Spank !"
+    open /Applications/Spank.app
+    
+    echo "✅ Installation terminée avec succès."
+    echo "Vous pouvez fermer cette fenêtre."
+else
+    echo "❌ Erreur : Spank.app introuvable à côté du script."
+fi
+exit 0
+EOF
+chmod +x Install_Spank.command
+
 rm webview.swift spank
 echo "✅ Terminé ! Tu as maintenant une vraie application '${APP_BUNDLE}'."
-echo "👉 Tu peux maintenant tester en double-cliquant sur ${APP_BUNDLE}"
+echo "👉 Pour la distribuer, crée un dossier contenant Spank.app et Install_Spank.command, puis build ton DMG dessus !"
